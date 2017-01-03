@@ -1,7 +1,7 @@
 restjson
 ========
 
-A Client for RESTful HTTP services that talk JSON.
+A Client for flask_restless-based RESTful HTTP services.
 
 Based on Requests, restjson implements a few extra features:
 
