@@ -1,0 +1,4 @@
+include README.rst
+include Makefile
+include requirements.txt
+include tox.ini
