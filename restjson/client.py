@@ -5,6 +5,8 @@ from requests import compat, models
 compat.json = json
 models.complexjson = json
 
+from restjson.cache import MemoryCache, cache_key
+
 
 class objdict(dict):
     def __getattr__(self, name):
@@ -32,34 +34,59 @@ class Client(object):
         self.session = requests.Session()
         headers = {'Content-Type': 'application/json'}
         self.session.headers.update(headers)
+        self.cache = MemoryCache()
 
     def _delete(self, api, entry_id):
         url = self.endpoint + api + '/%d' % entry_id
         return self.session.delete(url)
 
     def _get(self, api, params=None):
-        return self.session.get(self.endpoint + api, params=params).json()
+        headers = {}
+        key = cache_key(self.endpoint + api, params)
+        if key in self.cache:
+            etag, cached = self.cache[key]
+            headers['If-None-Match'] = etag
+
+        resp = self.session.get(self.endpoint + api, params=params,
+                                headers=headers)
+
+        if resp.status_code == 304:
+            return self.cache[key][1]
+
+        if resp.status_code > 399:
+            raise ResourceError(resp.content)
+
+        data = objdict(resp.json())
+
+        if 'Etag' in resp.headers:
+            self.cache[key] = resp.headers['Etag'], data
+
+        return data
 
     def _post(self, api, data):
         url = self.endpoint + api
-        res = self.session.post(url, data=json.dumps(data))
-        if res.status_code != 201:
-            try:
-                raise ResourceError(res.json()['message'])
-            except (json.decoder.JSONDecodeError, KeyError):
-                raise ResourceError(res.content)
-        return res
+        return self._modify(self.endpoint + api, data, expected=201,
+                            method='POST')
 
     def _patch(self, api, entry_id, data):
         url = self.endpoint + api + '/%d' % entry_id
-        res = self.session.patch(url, data=json.dumps(data))
-        if res.status_code != 200:
-            try:
-                raise ResourceError(res.json()['message'])
-            except (json.decoder.JSONDecodeError, KeyError):
-                raise ResourceError(res.content)
+        return self._modify(url, data, expected=200, method='PATCH')
 
-        return res
+    def _modify(self, endpoint, data, expected=200, method='POST'):
+        key = cache_key(endpoint)
+        method = getattr(self.session, method.lower())
+        res = method(endpoint, data=json.dumps(data))
+
+        if res.status_code != expected:
+            raise ResourceError('Expected %d, got %d' % (expected,
+                                res.status_code))
+
+        data = objdict(res.json())
+
+        if 'Etag' in res.headers:
+            self.cache[key] = res.headers['Etag'], data
+
+        return data
 
     def get_entries(self, table, filters=None, order_by=None):
         query = {}
@@ -87,9 +114,6 @@ class Client(object):
     def delete_entry(self, table, entry_id):
         return self._delete(table, entry_id)
 
-    def get_entry(self, table, entry_id, entry_field='id'):
-        filters = [{'name': entry_field, 'op': 'eq', 'val': entry_id}]
-        query = json.dumps({'filters': filters})
-        params = {'q': query}
-        res = self._get(table, params=params)
-        return objdict(res['objects'][0])
+    def get_entry(self, table, entry_id):
+        endpoint = table + '/%s' % str(entry_id)
+        return self._get(endpoint)
