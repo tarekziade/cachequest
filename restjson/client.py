@@ -1,8 +1,9 @@
 import requests
 import ujson as json
 
-from requests import compat
+from requests import compat, models
 compat.json = json
+models.complexjson = json
 
 
 class objdict(dict):
