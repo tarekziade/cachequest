@@ -1,9 +1,9 @@
 import requests
 import ujson as json
 
-from requests import compat, models
-compat.json = json
-models.complexjson = json
+from requests import compat, models     # noqa
+compat.json = json                      # noqa
+models.complexjson = json               # noqa
 
 from restjson.cache import MemoryCache, cache_key
 
@@ -25,7 +25,9 @@ class objdict(dict):
 
 
 class ResourceError(Exception):
-    pass
+    def __init__(self, code, msg):
+        self.code = code
+        super(ResourceError, self).__init__(msg)
 
 
 class Client(object):
@@ -54,7 +56,7 @@ class Client(object):
             return self.cache[key][1]
 
         if resp.status_code > 399:
-            raise ResourceError(resp.content)
+            raise ResourceError(resp.status_code, resp.content)
 
         data = objdict(resp.json())
 
@@ -64,7 +66,6 @@ class Client(object):
         return data
 
     def _post(self, api, data):
-        url = self.endpoint + api
         return self._modify(self.endpoint + api, data, expected=201,
                             method='POST')
 
@@ -74,12 +75,18 @@ class Client(object):
 
     def _modify(self, endpoint, data, expected=200, method='POST'):
         key = cache_key(endpoint)
+        if key in self.cache:
+            headers = {'If-Match': self.cache[key][0]}
+        else:
+            headers = {}
+
         method = getattr(self.session, method.lower())
-        res = method(endpoint, data=json.dumps(data))
+        res = method(endpoint, data=json.dumps(data), headers=headers)
 
         if res.status_code != expected:
-            raise ResourceError('Expected %d, got %d' % (expected,
-                                res.status_code))
+            raise ResourceError(res.status_code,
+                                'Expected %d, got %d' % (expected,
+                                                         res.status_code))
 
         data = objdict(res.json())
 
