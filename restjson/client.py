@@ -1,5 +1,6 @@
 import requests
 import ujson as json
+import pprint
 
 from requests import compat, models     # noqa
 compat.json = json                      # noqa
@@ -25,31 +26,41 @@ class objdict(dict):
 
 
 class ResourceError(Exception):
-    def __init__(self, code, msg):
-        self.code = code
+    def __init__(self, code, errors=None, msg=''):
         super(ResourceError, self).__init__(msg)
+        self.msg = msg
+        self.errors = errors is not None and errors or {}
+        self.code = code
+
+    def __str__(self):
+        display = ['ResourceError', 'HTTP Status %d' % self.code]
+        errors = pprint.pformat(self.errors)
+        display += errors.split('\n')
+        display.append(self.msg)
+        return '\n'.join(display)
 
 
 class Client(object):
     def __init__(self, endpoint):
         self.endpoint = endpoint
         self.session = requests.Session()
-        headers = {'Content-Type': 'application/json'}
+        headers = {'Content-Type': 'application/vnd.api+json'}
         self.session.headers.update(headers)
         self.cache = MemoryCache()
+        self.models = self._get('')['models']
 
-    def _delete(self, api, entry_id):
-        url = self.endpoint + api + '/%d' % entry_id
+    def _delete(self, collection, entry_id):
+        url = self.endpoint + collection + '/%d' % entry_id
         return self.session.delete(url)
 
-    def _get(self, api, params=None):
+    def _get(self, resource, params=None):
         headers = {}
-        key = cache_key(self.endpoint + api, params)
+        key = cache_key(self.endpoint + resource, params)
         if key in self.cache:
             etag, cached = self.cache[key]
             headers['If-None-Match'] = etag
 
-        resp = self.session.get(self.endpoint + api, params=params,
+        resp = self.session.get(self.endpoint + resource, params=params,
                                 headers=headers)
 
         if resp.status_code == 304:
@@ -65,30 +76,47 @@ class Client(object):
 
         return data
 
-    def _post(self, api, data):
-        return self._modify(self.endpoint + api, data, expected=201,
-                            method='POST')
+    def _post(self, collection, data):
+        return self._modify(collection, data, method='POST')
 
-    def _patch(self, api, entry_id, data):
-        url = self.endpoint + api + '/%d' % entry_id
-        return self._modify(url, data, expected=200, method='PATCH')
+    def _patch(self, collection, entry_id, data):
+        return self._modify(collection, data, method='PATCH',
+                            entry_id=entry_id)
 
-    def _modify(self, endpoint, data, expected=200, method='POST'):
-        key = cache_key(endpoint)
+    def _modify(self, collection, data, method='POST', entry_id=None):
+
+        data['type'] = collection
+
+        if entry_id is not None:
+            url = self.endpoint + collection + '/%s' % str(entry_id)
+        else:
+            url = self.endpoint + collection
+
+        if 'id' in data:
+            data['id'] = str(data['id'])
+
+        key = cache_key(url)
         if key in self.cache:
             headers = {'If-Match': self.cache[key][0]}
         else:
             headers = {}
 
+        data = {'data': data}
         method = getattr(self.session, method.lower())
-        res = method(endpoint, data=json.dumps(data), headers=headers)
+        res = method(url, data=json.dumps(data), headers=headers)
 
-        if res.status_code != expected:
+        if res.status_code == 204:
+            # the data was modified as expected
+            data = data['data']
+        elif res.status_code in (200, 201):
+            # the data was changed by the server as well
+            data = res.json()['data']
+        else:
+            # unexpected result
             raise ResourceError(res.status_code,
-                                'Expected %d, got %d' % (expected,
-                                                         res.status_code))
+                                errors=data.get('errors'))
 
-        data = objdict(res.json())
+        data = objdict(data)
 
         if 'Etag' in res.headers:
             self.cache[key] = res.headers['Etag'], data
@@ -106,16 +134,15 @@ class Client(object):
             query['order_by'] = [{'field': order_by}]
 
         params = {'q': json.dumps(query)}
-        res = self._get(table, params=params)
-        res['objects'] = [objdict(ob) for ob in res['objects']]
-        return res
+        res = self._get(table, params=params)['data']
+        return [objdict(ob) for ob in res]
 
     def create_entry(self, table, data):
-        res = self._post(table, data)
-        return res.json()
+        return self._post(table, data)
 
     def update_entry(self, table, data):
-        entry_id = data.pop('id')
+        # XXX what about tables that uses another name
+        entry_id = data['id']
         return self._patch(table, entry_id, data)
 
     def delete_entry(self, table, entry_id):
@@ -123,4 +150,4 @@ class Client(object):
 
     def get_entry(self, table, entry_id):
         endpoint = table + '/%s' % str(entry_id)
-        return self._get(endpoint)
+        return self._get(endpoint)['data']
