@@ -129,17 +129,17 @@ class Client(object):
 
         return data
 
-    def get_entries(self, table, filters=None, order_by=None):
-        query = {}
+    def get_entries(self, table, filters=None, sort=None):
+        params = {}
 
         if filters is not None:
-            query['filters'] = filters
+            params['filter[objects]'] = json.dumps(filters)
 
-        query['limit'] = 99
-        if order_by is not None:
-            query['order_by'] = [{'field': order_by}]
+        params['limit'] = 99
 
-        params = {'q': json.dumps(query)}
+        if sort is not None:
+            params['sort'] = sort
+
         res = self._get(table, params=params)['data']
         return [objdict(ob) for ob in res]
 

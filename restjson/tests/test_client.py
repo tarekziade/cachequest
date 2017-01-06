@@ -36,3 +36,11 @@ class TestClient(unittest.TestCase):
             raise AssertionError()
         except ResourceError as e:
             self.assertEqual(e.code, 404)
+
+    def test_filters(self):
+        client = Client('http://localhost:5001/api/')
+        filters = [{'name': 'github',
+                    'op': 'eq',
+                    'val': 'tarekziade'}]
+        entries = client.get_entries('user', filters=filters)
+        self.assertEqual(len(entries), 1)
