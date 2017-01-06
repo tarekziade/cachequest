@@ -47,7 +47,13 @@ class Client(object):
         headers = {'Content-Type': 'application/vnd.api+json'}
         self.session.headers.update(headers)
         self.cache = MemoryCache()
-        self.models = self._get('')['models']
+        self._models = None
+
+    @property
+    def models(self):
+        if self._models is None:
+            self._models = self._get('')['models']
+        return self._models
 
     def _delete(self, collection, entry_id):
         url = self.endpoint + collection + '/%d' % entry_id
