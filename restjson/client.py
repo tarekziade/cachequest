@@ -57,7 +57,17 @@ class Client(object):
 
     def _delete(self, collection, entry_id):
         url = self.endpoint + collection + '/%d' % entry_id
-        return self.session.delete(url)
+        key = cache_key(url)
+        if key in self.cache:
+            headers = {'If-Match': self.cache[key][0]}
+        else:
+            headers = {}
+
+        resp = self.session.delete(url, headers=headers)
+
+        if resp.status_code > 399:
+            raise ResourceError(resp.status_code, resp.content)
+        return resp
 
     def _get(self, resource, params=None):
         headers = {}
@@ -91,7 +101,7 @@ class Client(object):
 
     def _modify(self, collection, data, method='POST', entry_id=None):
 
-        data['type'] = collection
+        req_data = {'attributes': data, 'type': collection}
 
         if entry_id is not None:
             url = self.endpoint + collection + '/%s' % str(entry_id)
@@ -99,7 +109,7 @@ class Client(object):
             url = self.endpoint + collection
 
         if 'id' in data:
-            data['id'] = str(data['id'])
+            req_data['id'] = str(data['id'])
 
         key = cache_key(url)
         if key in self.cache:
@@ -107,24 +117,26 @@ class Client(object):
         else:
             headers = {}
 
-        data = {'data': data}
         method = getattr(self.session, method.lower())
-        res = method(url, data=json.dumps(data), headers=headers)
+        req_data = {'data': req_data}
+        res = method(url, data=json.dumps(req_data), headers=headers)
 
         if res.status_code == 204:
             # the data was modified as expected
-            data = data['data']
+            pass
         elif res.status_code in (200, 201):
             # the data was changed by the server as well
             data = res.json()['data']
+            data = objdict(data)
         else:
             # unexpected result
+            data = res.json()
             raise ResourceError(res.status_code,
                                 errors=data.get('errors'))
 
-        data = objdict(data)
-
         if 'Etag' in res.headers:
+            if 'last_modified' in data:
+                data['last_modified'] = res.headers['Etag']
             self.cache[key] = res.headers['Etag'], data
 
         return data

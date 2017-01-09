@@ -13,7 +13,7 @@ class TestClient(unittest.TestCase):
         name = model['name']
         key = model['primary_key'][0]
         entries = client.get_entries(name)
-        for entry in entries:
+        for entry in entries[-2:-1]:
             # exercising local cache
             client.get_entry(name, entry[key])
             last_entry = client.get_entry(name, entry[key])
@@ -44,3 +44,7 @@ class TestClient(unittest.TestCase):
                     'val': 'tarekziade'}]
         entries = client.get_entries('user', filters=filters)
         self.assertEqual(len(entries), 1)
+
+    def test_sort(self):
+        client = Client('http://localhost:5001/api/')
+        client.get_entries('project', sort='name')
