@@ -130,7 +130,11 @@ class Client(object):
             data = objdict(data)
         else:
             # unexpected result
-            data = res.json()
+            try:
+                data = res.json()
+            except ValueError:
+                data = {'errors': [res.content]}
+
             raise ResourceError(res.status_code,
                                 errors=data.get('errors'))
 
@@ -168,4 +172,4 @@ class Client(object):
 
     def get_entry(self, table, entry_id):
         endpoint = table + '/%s' % str(entry_id)
-        return self._get(endpoint)['data']
+        return objdict(self._get(endpoint)['data'])
