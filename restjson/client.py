@@ -61,6 +61,9 @@ class Client(object):
                 return model
         raise KeyError(name)
 
+    def _get_relations(self, collection):
+        return self._get_model(collection)['relationships'].keys()
+
     def _get_relation_target(self, collection, relation_name):
         relations = self._get_model(collection)['relationships']
         return relations[relation_name]['target']
@@ -122,6 +125,11 @@ class Client(object):
         else:
             headers = {}
 
+        target = self._get_relation_target(collection, relation_name)
+        for item in data:
+            if 'type' not in item:
+                item['type'] = target
+
         req_data = {'data': data, 'type': collection}
         resp = self.session.delete(url, data=json.dumps(req_data),
                                    headers=headers)
@@ -157,9 +165,9 @@ class Client(object):
         else:
             headers = {}
 
-        method = getattr(self.session, method.lower())
+        req_method = getattr(self.session, method.lower())
         req_data = {'data': req_data}
-        res = method(url, data=json.dumps(req_data), headers=headers)
+        res = req_method(url, data=json.dumps(req_data), headers=headers)
 
         if res.status_code == 204:
             # the data was modified as expected
@@ -190,6 +198,18 @@ class Client(object):
         return data
 
     def _modify(self, collection, data, method='POST', entry_id=None):
+        # XXX modifying relationships - is that sane ?
+        modify_relations = []
+        if entry_id is not None:
+            relations = self._get_relations(collection)
+            for field in list(data.keys()):
+                if field not in relations:
+                    continue
+                # XXX what about one-one
+                rel_data = data.pop(field)
+                if not isinstance(rel_data, list):
+                    continue
+                modify_relations.append((field, rel_data))
 
         req_data = {'attributes': data, 'type': collection}
 
@@ -207,9 +227,9 @@ class Client(object):
         else:
             headers = {}
 
-        method = getattr(self.session, method.lower())
+        req_method = getattr(self.session, method.lower())
         req_data = {'data': req_data}
-        res = method(url, data=json.dumps(req_data), headers=headers)
+        res = req_method(url, data=json.dumps(req_data), headers=headers)
 
         if res.status_code == 204:
             # the data was modified as expected
@@ -227,6 +247,11 @@ class Client(object):
 
             raise ResourceError(res.status_code,
                                 errors=data.get('errors'))
+
+        # XXX modifying relationships - is that sane ?
+        for rel_name, rel_data in modify_relations:
+            self._modify_relation(collection, entry_id, rel_name,
+                                  rel_data, method=method)
 
         if 'Etag' in res.headers:
             if 'last_modified' in data:

@@ -62,7 +62,8 @@ class TestClient(unittest.TestCase):
         project = client.get_entry('project', 1)
         try:
             self.assertEquals(project.tags, [])
-            client.update_relation('project', 1, 'tags', tags)
+            project.tags = tags
+            client.update_entry('project', project)
             project = client.get_entry('project', 1)
             self.assertEquals(len(project.tags), 3)
         finally:
