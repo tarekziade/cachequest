@@ -48,3 +48,22 @@ class TestClient(unittest.TestCase):
     def test_sort(self):
         client = Client('http://localhost:5001/api/')
         client.get_entries('project', sort='name')
+
+    def test_relations(self):
+        client = Client('http://localhost:5001/api/')
+
+        for tag in ('1', '2', '3'):
+            client.create_entry('tag', {'name': tag})
+
+        tags = [{'id': '1'},
+                {'id': '2'},
+                {'id': '3'}]
+
+        project = client.get_entry('project', 1)
+        try:
+            self.assertEquals(project.tags, [])
+            client.update_relation('project', 1, 'tags', tags)
+            project = client.get_entry('project', 1)
+            self.assertEquals(len(project.tags), 3)
+        finally:
+            client.delete_relation('project', 1, 'tags', tags)

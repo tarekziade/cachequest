@@ -55,6 +55,16 @@ class Client(object):
             self._models = self._get('')['models']
         return self._models
 
+    def _get_model(self, name):
+        for model in self.models:
+            if model['name'] == name:
+                return model
+        raise KeyError(name)
+
+    def _get_relation_target(self, collection, relation_name):
+        relations = self._get_model(collection)['relationships']
+        return relations[relation_name]['target']
+
     def _delete(self, collection, entry_id):
         url = self.endpoint + collection + '/%d' % entry_id
         key = cache_key(url)
@@ -98,6 +108,86 @@ class Client(object):
     def _patch(self, collection, entry_id, data):
         return self._modify(collection, data, method='PATCH',
                             entry_id=entry_id)
+
+    def _patch_relation(self, collection, entry_id, relation_name, data):
+        return self._modify_relation(collection, entry_id, relation_name,
+                                     data, method='PATCH')
+
+    def delete_relation(self, collection, entry_id, relation_name, data):
+        url = self.endpoint + collection + '/%d/relationships/%s'
+        url = url % (entry_id, relation_name)
+        key = cache_key(url)
+        if key in self.cache:
+            headers = {'If-Match': self.cache[key][0]}
+        else:
+            headers = {}
+
+        req_data = {'data': data, 'type': collection}
+        resp = self.session.delete(url, data=json.dumps(req_data),
+                                   headers=headers)
+
+        if resp.status_code > 399:
+            raise ResourceError(resp.status_code, resp.content)
+
+        # invalidate the entry cache if any
+        # XXX we shoud propagate on the server the last_modified field
+        # of the entry instead of doing this here
+        entry_url = self.endpoint + collection + '/%s' % str(entry_id)
+        key = cache_key(entry_url)
+        if key in self.cache:
+            del self.cache[key]
+
+        return resp
+
+    def _modify_relation(self, collection, entry_id, relation_name, data,
+                         method='PATCH'):
+        url = self.endpoint + collection + '/%s/relationships/%s'
+        url = url % (str(entry_id), relation_name)
+
+        target = self._get_relation_target(collection, relation_name)
+        for item in data:
+            if 'type' not in item:
+                item['type'] = target
+
+        req_data = data
+        key = cache_key(url)
+
+        if key in self.cache:
+            headers = {'If-Match': self.cache[key][0]}
+        else:
+            headers = {}
+
+        method = getattr(self.session, method.lower())
+        req_data = {'data': req_data}
+        res = method(url, data=json.dumps(req_data), headers=headers)
+
+        if res.status_code == 204:
+            # the data was modified as expected
+            pass
+        else:
+            # unexpected result
+            try:
+                data = res.json()
+            except ValueError:
+                data = {'errors': [res.content]}
+
+            raise ResourceError(res.status_code,
+                                errors=data.get('errors'))
+
+        if 'Etag' in res.headers:
+            if 'last_modified' in data:
+                data['last_modified'] = res.headers['Etag']
+            self.cache[key] = res.headers['Etag'], data
+
+        # invalidate the entry cache if any
+        # XXX we shoud propagate on the server the last_modified field
+        # of the entry instead of doing this here
+        entry_url = self.endpoint + collection + '/%s' % str(entry_id)
+        key = cache_key(entry_url)
+        if key in self.cache:
+            del self.cache[key]
+
+        return data
 
     def _modify(self, collection, data, method='POST', entry_id=None):
 
@@ -173,3 +263,6 @@ class Client(object):
     def get_entry(self, table, entry_id):
         endpoint = table + '/%s' % str(entry_id)
         return objdict(self._get(endpoint)['data'])
+
+    def update_relation(self, table, entry_id, relation_name, data):
+        return self._patch_relation(table, entry_id, relation_name, data)
