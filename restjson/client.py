@@ -291,3 +291,11 @@ class Client(object):
 
     def update_relation(self, table, entry_id, relation_name, data):
         return self._patch_relation(table, entry_id, relation_name, data)
+
+    def bust_cache(self, table, entry_id):
+        url = self.endpoint + table + '/%d' % entry_id
+        key = cache_key(url)
+        if key in self.cache:
+            del self.cache[key]
+            return True
+        return False

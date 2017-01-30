@@ -17,6 +17,11 @@ class TestClient(unittest.TestCase):
             # exercising local cache
             client.get_entry(name, entry[key])
             last_entry = client.get_entry(name, entry[key])
+            cache_size = len(client.cache)
+            client.bust_cache(name, entry[key])
+            self.assertTrue(len(client.cache) == cache_size - 1)
+            last_entry = client.get_entry(name, entry[key])
+            self.assertEqual(len(client.cache), cache_size)
 
         last_entry['firstname'] = 'Bam'
         client.update_entry(name, last_entry)
@@ -52,19 +57,17 @@ class TestClient(unittest.TestCase):
     def test_relations(self):
         client = Client('http://localhost:5001/api/')
 
+        new_tags = []
         for tag in ('1', '2', '3'):
-            client.create_entry('tag', {'name': tag})
-
-        tags = [{'id': '1'},
-                {'id': '2'},
-                {'id': '3'}]
+            entry = client.create_entry('tag', {'name': tag})
+            new_tags.append(entry)
 
         project = client.get_entry('project', 1)
         try:
-            self.assertEquals(project.tags, [])
-            project.tags = tags
+            curlen = len(project.tags)
+            project.tags.extend(new_tags)
             client.update_entry('project', project)
             project = client.get_entry('project', 1)
-            self.assertEquals(len(project.tags), 3)
+            self.assertEquals(len(project.tags), 3 + curlen)
         finally:
-            client.delete_relation('project', 1, 'tags', tags)
+            client.delete_relation('project', 1, 'tags', new_tags)
