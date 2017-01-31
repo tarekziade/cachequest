@@ -20,7 +20,7 @@ class TestClient(unittest.TestCase):
             cache_size = len(client.cache)
             client.bust_cache(name, entry[key])
             self.assertTrue(len(client.cache) == cache_size - 1)
-            last_entry = client.get_entry(name, entry[key])
+            last_entry = client.get_entry(name, entry[key], bust_cache=True)
             self.assertEqual(len(client.cache), cache_size)
 
         last_entry['firstname'] = 'Bam'

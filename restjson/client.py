@@ -285,7 +285,9 @@ class Client(object):
     def delete_entry(self, table, entry_id):
         return self._delete(table, entry_id)
 
-    def get_entry(self, table, entry_id):
+    def get_entry(self, table, entry_id, bust_cache=False):
+        if bust_cache:
+            self.bust_cache(table, entry_id)
         endpoint = table + '/%s' % str(entry_id)
         return objdict(self._get(endpoint)['data'])
 
