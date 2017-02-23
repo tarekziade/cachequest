@@ -40,13 +40,19 @@ class ResourceError(Exception):
         return '\n'.join(display)
 
 
+_CACHE = {'memory': MemoryCache}
+
+
 class Client(object):
-    def __init__(self, endpoint):
+    def __init__(self, endpoint, cache='memory'):
         self.endpoint = endpoint
         self.session = requests.Session()
         headers = {'Content-Type': 'application/vnd.api+json'}
         self.session.headers.update(headers)
-        self.cache = MemoryCache()
+        if not cache:
+            self.cache = None
+        else:
+            self.cache = _CACHE[cache]()
         self._models = None
 
     @property
@@ -71,7 +77,7 @@ class Client(object):
     def _delete(self, collection, entry_id):
         url = self.endpoint + collection + '/%d' % entry_id
         key = cache_key(url)
-        if key in self.cache:
+        if self.cache is not None and key in self.cache:
             headers = {'If-Match': self.cache[key][0]}
         else:
             headers = {}
@@ -85,7 +91,7 @@ class Client(object):
     def _get(self, resource, params=None):
         headers = {}
         key = cache_key(self.endpoint + resource, params)
-        if key in self.cache:
+        if self.cache is not None and key in self.cache:
             etag, cached = self.cache[key]
             headers['If-None-Match'] = etag
 
@@ -100,7 +106,7 @@ class Client(object):
 
         data = objdict(resp.json())
 
-        if 'Etag' in resp.headers:
+        if self.cache is not None and 'Etag' in resp.headers:
             self.cache[key] = resp.headers['Etag'], data
 
         return data
@@ -120,7 +126,7 @@ class Client(object):
         url = self.endpoint + collection + '/%d/relationships/%s'
         url = url % (entry_id, relation_name)
         key = cache_key(url)
-        if key in self.cache:
+        if self.cache is not None and key in self.cache:
             headers = {'If-Match': self.cache[key][0]}
         else:
             headers = {}
@@ -142,7 +148,7 @@ class Client(object):
         # of the entry instead of doing this here
         entry_url = self.endpoint + collection + '/%s' % str(entry_id)
         key = cache_key(entry_url)
-        if key in self.cache:
+        if self.cache is not None and key in self.cache:
             del self.cache[key]
 
         return resp
@@ -160,7 +166,7 @@ class Client(object):
         req_data = data
         key = cache_key(url)
 
-        if key in self.cache:
+        if self.cache is not None and key in self.cache:
             headers = {'If-Match': self.cache[key][0]}
         else:
             headers = {}
@@ -192,7 +198,7 @@ class Client(object):
         # of the entry instead of doing this here
         entry_url = self.endpoint + collection + '/%s' % str(entry_id)
         key = cache_key(entry_url)
-        if key in self.cache:
+        if self.cache is not None and key in self.cache:
             del self.cache[key]
 
         return data
@@ -222,7 +228,7 @@ class Client(object):
             req_data['id'] = str(data['id'])
 
         key = cache_key(url)
-        if key in self.cache:
+        if self.cache is not None and key in self.cache:
             headers = {'If-Match': self.cache[key][0]}
         else:
             headers = {}
@@ -297,7 +303,7 @@ class Client(object):
     def bust_cache(self, table, entry_id):
         url = self.endpoint + table + '/%d' % entry_id
         key = cache_key(url)
-        if key in self.cache:
+        if self.cache is not None and key in self.cache:
             del self.cache[key]
             return True
         return False

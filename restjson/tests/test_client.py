@@ -71,3 +71,17 @@ class TestClient(unittest.TestCase):
             self.assertEquals(len(project.tags), 3 + curlen)
         finally:
             client.delete_relation('project', 1, 'tags', new_tags)
+
+    def test_cache(self):
+        client = Client('http://localhost:5001/api/', cache=False)
+        for model in client.models:
+            if model['name'] == 'user':
+                break
+
+        name = model['name']
+        key = model['primary_key'][0]
+        entries = client.get_entries(name)
+        for entry in entries[-2:-1]:
+            client.get_entry(name, entry[key])
+            client.get_entry(name, entry[key])
+            client.get_entry(name, entry[key], bust_cache=True)
