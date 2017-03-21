@@ -188,7 +188,7 @@ class Client(object):
             raise ResourceError(res.status_code,
                                 errors=data.get('errors'))
 
-        if 'Etag' in res.headers:
+        if self.cache is not None and 'Etag' in res.headers:
             if 'last_modified' in data:
                 data['last_modified'] = res.headers['Etag']
             self.cache[key] = res.headers['Etag'], data
@@ -259,7 +259,7 @@ class Client(object):
             self._modify_relation(collection, entry_id, rel_name,
                                   rel_data, method=method)
 
-        if 'Etag' in res.headers:
+        if self.cache is not None and 'Etag' in res.headers:
             if 'last_modified' in data:
                 data['last_modified'] = res.headers['Etag']
             self.cache[key] = res.headers['Etag'], data
